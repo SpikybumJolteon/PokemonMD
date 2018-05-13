@@ -1,0 +1,17 @@
+[
+{
+   "modid": "pokemonmd",
+   "name": "PokemonMD: Undaunted Heroes",
+   "description": "",
+   "version": "developer ver 0.76",
+   "mcversion": "1.7.10",
+   "url": "",
+   "updateUrl": "",
+   "authorList": ["SpikybumJolteon"],
+   "credits": "Special thanks to CoolAlias, Mr. Crayfish, and many, many others for their tutorials.",
+   "logoFile": "",
+   "screenshots": [],
+   "dependencies": ["GalacticraftCore", "GalacticraftMars", "battlegear2"],
+   "useDependencyInformation": "true"
+}
+]
