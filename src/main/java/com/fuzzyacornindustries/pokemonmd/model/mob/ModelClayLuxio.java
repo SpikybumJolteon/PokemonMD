@@ -6,6 +6,8 @@ import com.fuzzyacornindustries.pokemonmd.animation.IdleAnimationClock;
 import com.fuzzyacornindustries.pokemonmd.animation.JointAnimation;
 import com.fuzzyacornindustries.pokemonmd.animation.PartAnimate;
 import com.fuzzyacornindustries.pokemonmd.animation.PartInfo;
+import com.fuzzyacornindustries.pokemonmd.entity.mob.IMobMotionTracker;
+import com.fuzzyacornindustries.pokemonmd.entity.mob.hostile.EntityClayCommanderDelcatty;
 import com.fuzzyacornindustries.pokemonmd.entity.mob.hostile.EntityClayLuxio;
 
 import net.minecraft.client.model.ModelBase;
@@ -19,7 +21,9 @@ public class ModelClayLuxio extends ModelBase
 
 	private AnimationDeployer animationDeployer;
 
-	float movementFrequency = 1.4F;
+	public final float RUN_FREQUENCY = 1.0F;
+	public final float WALK_FREQUENCY = 1.3F;
+	public final float SNEAK_VELOCITY = 0.45F;
 
 	public ModelRenderer body;
 	public ModelRenderer neckJoint;
@@ -418,21 +422,25 @@ public class ModelClayLuxio extends ModelBase
 
 	public void animate(Entity entity, float distanceMoved, float horzVelocity, float yawRotationDifference, float yawHeadOffsetDifference, float pitchRotation, float modelSize)
 	{	
-		/* Static references to array lengths in Entity class from Model class
-		 * makes the glow/normal models not animate in sync. */
 		this.animationDeployer.update((IAnimatedEntity)entity);
 		resetPartInfos();
 
-		animateBody((EntityClayLuxio)entity, distanceMoved, horzVelocity, yawRotationDifference, yawHeadOffsetDifference, pitchRotation, modelSize);
-		animateHead((EntityClayLuxio)entity, distanceMoved, horzVelocity, yawRotationDifference, yawHeadOffsetDifference, pitchRotation, modelSize);
-		animateLegs((EntityClayLuxio)entity, distanceMoved, horzVelocity, yawRotationDifference, yawHeadOffsetDifference, pitchRotation, modelSize);
-		animateTail((EntityClayLuxio)entity, distanceMoved, horzVelocity, yawRotationDifference, yawHeadOffsetDifference, pitchRotation, modelSize);
+		float angularVelocity = ((IMobMotionTracker)entity).getAngularVelocity();
+		float verticalVelocity = (float)((IMobMotionTracker)entity).getHeightVelocity();
+
+		animateBody((EntityClayLuxio)entity, distanceMoved, horzVelocity, yawRotationDifference, yawHeadOffsetDifference, pitchRotation, modelSize, verticalVelocity);
+		animateHead((EntityClayLuxio)entity, distanceMoved, horzVelocity, yawRotationDifference, yawHeadOffsetDifference, pitchRotation, modelSize, verticalVelocity);
+		animateLegs((EntityClayLuxio)entity, distanceMoved, horzVelocity, yawRotationDifference, yawHeadOffsetDifference, pitchRotation, modelSize, verticalVelocity);
+		animateTail((EntityClayLuxio)entity, distanceMoved, horzVelocity, yawRotationDifference, yawHeadOffsetDifference, pitchRotation, modelSize, verticalVelocity, angularVelocity);
 
 		deployAnimations();
 	}
 
 	public void resetPartInfos()
 	{
+		bodyInfo.resetNewPnt();
+		bodyInfo.resetNewAngles();
+		
 		neckJointInfo.resetNewAngles();
 		neckInfo.resetNewAngles();
 		headJointInfo.resetNewAngles();
@@ -465,76 +473,115 @@ public class ModelClayLuxio extends ModelBase
 		}
 	}
     
-	public void animateBody(EntityClayLuxio entity, float distanceMoved, float horzVelocity, float yawRotationDifference, float yawHeadOffsetDifference, float pitchRotation, float modelSize)
+	public void animateBody(EntityClayLuxio entity, float distanceMoved, float horzVelocity, float yawRotationDifference, float yawHeadOffsetDifference, float pitchRotation, float modelSize, float verticalVelocity)
 	{
-		float amplitude = 0.12F;
+		float walkCycleInterval = (WALK_FREQUENCY * distanceMoved % (2 * PI))/(2 * PI);
+		float runCycleInterval = (RUN_FREQUENCY * distanceMoved % (2 * PI))/(2 * PI);
 
-		bodyInfo.setNewRotateX(PartAnimate.posCosRotateAnimationAdjusted(distanceMoved, horzVelocity, movementFrequency, amplitude));
+		float bodyWalkAngle = (float)Math.toRadians(8);
+		float bodyRunAngle = (float)Math.toRadians(12);
+
+		float walkCycleAngleChange = MathHelper.cos(walkCycleInterval * 2 * PI + PI/2) * bodyWalkAngle * (1 - horzVelocity);
+		float runCycleAngleChange = MathHelper.cos(runCycleInterval * 2 * PI + PI/2) * bodyRunAngle * horzVelocity;
+
+		float bodyJumpAngle = (float)Math.toRadians(-55);
+		float verticalVelocityChangeAngle = (float)Math.toRadians(10);
+
+		float newVerticalVelocity = 1.5F * verticalVelocity;
+
+		if(newVerticalVelocity > 1F)
+			newVerticalVelocity = 1F;
+		else if(newVerticalVelocity < -1F)
+			newVerticalVelocity = -1F;
+		
+		float maximumChangeY = -1.0F;
+		float runCyclePointChange = (MathHelper.cos(2F * runCycleInterval * PI + PI) * maximumChangeY + maximumChangeY) * horzVelocity;
+
+		bodyInfo.setNewPointY(bodyInfo.getNewPointY() + runCyclePointChange * horzVelocity * (1F - Math.abs(newVerticalVelocity)));
+
+		bodyInfo.setNewRotateX(bodyInfo.getNewRotateX() - (walkCycleAngleChange + runCycleAngleChange) * horzVelocity * (1F - Math.abs(newVerticalVelocity)) 
+				+ bodyJumpAngle * newVerticalVelocity);
 	}
 
-	public void animateHead(EntityClayLuxio entity, float distanceMoved, float horzVelocity, float yawRotationDifference, float yawHeadOffsetDifference, float pitchRotation, float modelSize)
+	public void animateHead(EntityClayLuxio entity, float distanceMoved, float horzVelocity, float yawRotationDifference, float yawHeadOffsetDifference, float pitchRotation, float modelSize, float verticalVelocity)
 	{
 		JointAnimation.reverseJointRotatesChange(bodyInfo, neckJointInfo);
 
-		PartAnimate.headAnimateInfoOnlyWithAngleModifiers(neckJointInfo, yawHeadOffsetDifference, pitchRotation, 0.4F, 0.4F);
-
 		IdleAnimationClock currentIdleAnimationClock = entity.getIdleAnimationClockNeckBobble();
 
-		float idleAmplitudeX = 0.1F;
+		float idleAmplitudeX = (float)Math.toRadians(15);
 
-		// + (float)Math.toRadians(45)
-		float movementFrequency = 1.5F;
-		float movementAmplitude = 0.2F;
-		float angleChangeX = PartAnimate.posCosRotateAnimationAdjusted(distanceMoved, horzVelocity, movementFrequency, movementAmplitude);
+		float walkCycleInterval = (WALK_FREQUENCY * distanceMoved % (2 * PI))/(2 * PI);
+		float runCycleInterval = (RUN_FREQUENCY * distanceMoved % (2 * PI))/(2 * PI);
 
-		angleChangeX += -MathHelper.cos(currentIdleAnimationClock.getPhaseDurationCoveredX(0) * 2 * PI) * idleAmplitudeX + idleAmplitudeX;
+		float walkAngle = (float)Math.toRadians(20);
+		float runAngle = (float)Math.toRadians(28);
 
-		neckInfo.setNewRotateX(neckInfo.getNewRotateX() + angleChangeX);
-		neckInfo.setNewRotateY(neckInfo.getNewRotateY());
+		float walkCycleAngleChange = MathHelper.cos(walkCycleInterval * 2 * PI) * walkAngle * (1 - horzVelocity)
+				+ walkAngle * (1 - horzVelocity);
+		float runCycleAngleChange = MathHelper.cos(runCycleInterval * 2 * PI) * runAngle * horzVelocity
+				+ runAngle * horzVelocity;
+
+		float idleAngleChangeX = -MathHelper.cos(currentIdleAnimationClock.getPhaseDurationCoveredX(0) * 2 * PI) * idleAmplitudeX + idleAmplitudeX;
+
+		neckInfo.setNewRotateX(neckInfo.getNewRotateX() + idleAngleChangeX + (walkCycleAngleChange + runCycleAngleChange) * horzVelocity);
 
 		JointAnimation.reverseJointRotatesChange(neckInfo, headJointInfo);
 
-		PartAnimate.headAnimateInfoOnlyWithAngleModifiers(headInfo, yawHeadOffsetDifference, pitchRotation, 0.6F, 0.6F);
+		PartAnimate.headAnimateInfoOnly(headInfo, yawHeadOffsetDifference, pitchRotation);
 
 		/* ******* Ears ******** */
-		float moveFrequencyZ = movementFrequency;
-		float moveAmplitudeZ = 0.15F;
+		walkAngle = (float)Math.toRadians(20);
+		runAngle = (float)Math.toRadians(28);
 
-		float firstAngleChangeZ = PartAnimate.negCosRotateAnimationAdjusted(distanceMoved, horzVelocity, moveFrequencyZ, moveAmplitudeZ);
+		walkCycleAngleChange = MathHelper.cos(walkCycleInterval * 2 * PI) * walkAngle * (1 - horzVelocity);
+		runCycleAngleChange = MathHelper.cos(runCycleInterval * 2 * PI) * runAngle * horzVelocity;
+
+		float moveAngleZ = (walkCycleAngleChange + runCycleAngleChange) * horzVelocity;
 
 		float idleAmplitudeZ = 0.20F;
 
+		float newVerticalVelocity = 1.5F * verticalVelocity;
+
+		if(newVerticalVelocity > 1F)
+			newVerticalVelocity = 1F;
+		else if(newVerticalVelocity < -1F)
+			newVerticalVelocity = -1F;
+
+		float fallingEarAngle = (float)Math.toRadians(40);
+
 		// + (float)Math.toRadians(45)
-		float angleChangeZ = firstAngleChangeZ;
+		float angleChangeX = MathHelper.sin(currentIdleAnimationClock.getPhaseDurationCoveredX(0) * 2 * PI + PI) * idleAmplitudeZ * (1 - horzVelocity);
 
-		angleChangeZ += MathHelper.sin(currentIdleAnimationClock.getPhaseDurationCoveredX(0) * 2 * PI + PI) * idleAmplitudeZ;
-
-		earRtInfo.setNewRotateZ(earRtInfo.getNewRotateZ() - angleChangeZ);
-		earLftInfo.setNewRotateZ(earLftInfo.getNewRotateZ() + angleChangeZ);
+		earRtInfo.setNewRotateZ(earRtInfo.getNewRotateZ() - ((angleChangeX - moveAngleZ) * (1F - newVerticalVelocity) + fallingEarAngle * newVerticalVelocity));
+		earLftInfo.setNewRotateZ(earLftInfo.getNewRotateZ() + ((angleChangeX - moveAngleZ) * (1F - newVerticalVelocity) + fallingEarAngle * newVerticalVelocity));
 
 		/* ******* Hairs ******** */
-		foreheadHairRtInfo.setNewRotateZ(foreheadHairRtInfo.getNewRotateZ() - angleChangeZ * 0.7F);
-		foreheadHairLftInfo.setNewRotateZ(foreheadHairLftInfo.getNewRotateZ() + angleChangeZ * 0.7F);
+		float fallingHairAngle = (float)Math.toRadians(35);
+		float angleChangeZ = -moveAngleZ * 1.0F;
 
-		cheekHairRtBckInfo.setNewRotateZ(cheekHairRtBckInfo.getNewRotateZ() - angleChangeZ * 0.7F);
-		cheekHairRtFntInfo.setNewRotateZ(cheekHairRtFntInfo.getNewRotateZ() - angleChangeZ * 0.7F);
-		cheekHairLftBckInfo.setNewRotateZ(cheekHairLftBckInfo.getNewRotateZ() + angleChangeZ * 0.7F);
-		cheekHairLftFntInfo.setNewRotateZ(cheekHairLftFntInfo.getNewRotateZ() + angleChangeZ * 0.7F);
+		foreheadHairRtInfo.setNewRotateZ(foreheadHairRtInfo.getNewRotateZ() - ((angleChangeX - moveAngleZ) * (1F - newVerticalVelocity) + angleChangeZ + fallingHairAngle * newVerticalVelocity));
+		foreheadHairLftInfo.setNewRotateZ(foreheadHairLftInfo.getNewRotateZ() + ((angleChangeX - moveAngleZ) * (1F - newVerticalVelocity) + angleChangeZ + fallingHairAngle * newVerticalVelocity));
+		
+		cheekHairRtBckInfo.setNewRotateZ(cheekHairRtBckInfo.getNewRotateZ() - ((angleChangeX - moveAngleZ) * (1F - newVerticalVelocity) + angleChangeZ + fallingHairAngle * newVerticalVelocity));
+		cheekHairRtFntInfo.setNewRotateZ(cheekHairRtFntInfo.getNewRotateZ() - ((angleChangeX - moveAngleZ) * (1F - newVerticalVelocity) + angleChangeZ + fallingHairAngle * newVerticalVelocity));
+		cheekHairLftBckInfo.setNewRotateZ(cheekHairLftBckInfo.getNewRotateZ() + ((angleChangeX - moveAngleZ) * (1F - newVerticalVelocity) + angleChangeZ + fallingHairAngle * newVerticalVelocity));
+		cheekHairLftFntInfo.setNewRotateZ(cheekHairLftFntInfo.getNewRotateZ() + ((angleChangeX - moveAngleZ) * (1F - newVerticalVelocity) + angleChangeZ + fallingHairAngle * newVerticalVelocity));
 	}
 
-	public void animateLegs(EntityClayLuxio entity, float distanceMoved, float horzVelocity, float yawRotationDifference, float yawHeadOffsetDifference, float pitchRotation, float modelSize)
+	public void animateLegs(EntityClayLuxio entity, float distanceMoved, float horzVelocity, float yawRotationDifference, float yawHeadOffsetDifference, float pitchRotation, float modelSize, float verticalVelocity)
 	{
 		float amplitude = 0.8F;
 
 		// Run constants
 		float legFntRtModifierRun = 2F * PI * (1F/4F);
-		float legBckRtModifierRun = 2F * PI * (5F/16F);
+		float legBckRtModifierRun = 2F * PI * (7F/16F);
 		float legBckLftModifierRun = 2F * PI * (8F/16F);
 
 		// Walk constants
-		float legFntRtModifierWalk = 2F * PI * (1F/2F);
-		float legBckRtModifierWalk = 2F * PI * (3F/4F);
-		float legBckLftModifierWalk = 2F * PI * (1F/4F);
+		float legFntRtModifierWalk = 2F * PI * (9F/16F);
+		float legBckRtModifierWalk = 2F * PI * (14F/16F);
+		float legBckLftModifierWalk = 2F * PI * (6F/16F);
 
 		float legFntRtModifierDifference = legFntRtModifierRun - legFntRtModifierWalk;
 		float legBckRtModifierDifference = legBckRtModifierRun - legBckRtModifierWalk;
@@ -545,11 +592,11 @@ public class ModelClayLuxio extends ModelBase
 		float legBckLftModifier;
 
 		float sprint = 1.0F;
-		float sneak = 0.35F;
+		float sneak = SNEAK_VELOCITY;
 
 		if(horzVelocity > sneak)
 		{
-			float modifier = (float)(1F - (Math.pow(Math.E, -5F * ((horzVelocity - sneak)/(sprint - sneak)))));
+			float modifier = (horzVelocity - sneak)/(sprint - sneak);
 			legFntRtModifier = legFntRtModifierWalk + legFntRtModifierDifference * modifier;
 			legBckRtModifier = legBckRtModifierWalk + legBckRtModifierDifference * modifier;
 			legBckLftModifier = legBckLftModifierWalk + legBckLftModifierDifference * modifier;
@@ -561,64 +608,114 @@ public class ModelClayLuxio extends ModelBase
 			legBckLftModifier = legBckLftModifierWalk;	
 		}
 
-		/**/
+		float newVerticalVelocity = 1.5F * verticalVelocity;
+
+		if(newVerticalVelocity > 1F)
+			newVerticalVelocity = 1F;
+		else if(newVerticalVelocity < -1F)
+			newVerticalVelocity = -1F;
+
+		float fallingModifier = 0;
+
+		if(newVerticalVelocity < 0)
+			fallingModifier = newVerticalVelocity;
+
+		float fallingLegAngle = (float)Math.toRadians(25);
+
+		float newHorizontalVelocity = (2F * horzVelocity > 1F ? 1F : horzVelocity * 2F);
+
 		JointAnimation.reverseJointRotatesChange(bodyInfo, legFntRtInfo);
 		JointAnimation.reverseJointRotatesChange(bodyInfo, legFntLftInfo);
 		JointAnimation.reverseJointRotatesChange(bodyInfo, legBckRtInfo);
 		JointAnimation.reverseJointRotatesChange(bodyInfo, legBckLftInfo);
 
-		//( 1 - (Math.pow(Math.E, -0.4F * (float)(i + 1))));
-
-		legFntRtInfo.setNewRotateX(PartAnimate.posCosRotateAnimationAdjusted(distanceMoved + legFntRtModifier, horzVelocity, movementFrequency, amplitude));
-		legFntLftInfo.setNewRotateX(PartAnimate.posCosRotateAnimationAdjusted(distanceMoved, horzVelocity, movementFrequency, amplitude));
-		legBckRtInfo.setNewRotateX(legBckRtInfo.getNewRotateX() + PartAnimate.posCosRotateAnimationAdjusted(distanceMoved + legBckRtModifier, horzVelocity, movementFrequency, amplitude));
-		legBckLftInfo.setNewRotateX(legBckLftInfo.getNewRotateX() + PartAnimate.posCosRotateAnimationAdjusted(distanceMoved + legBckLftModifier, horzVelocity, movementFrequency, amplitude));
+		legFntRtInfo.setNewRotateX(legFntRtInfo.getNewRotateX() + PartAnimate.posCosRotateAnimationAdjusted(distanceMoved + legFntRtModifier, newHorizontalVelocity, this.RUN_FREQUENCY, amplitude) * (1F - Math.abs(newVerticalVelocity)) + fallingLegAngle * fallingModifier);
+		legFntLftInfo.setNewRotateX(legFntLftInfo.getNewRotateX() + PartAnimate.posCosRotateAnimationAdjusted(distanceMoved, newHorizontalVelocity, this.RUN_FREQUENCY, amplitude) * (1F - Math.abs(newVerticalVelocity)) + fallingLegAngle * fallingModifier);
+		legBckRtInfo.setNewRotateX(legBckRtInfo.getNewRotateX() + PartAnimate.posCosRotateAnimationAdjusted(distanceMoved + legBckRtModifier, newHorizontalVelocity, this.RUN_FREQUENCY, amplitude) * (1F - Math.abs(newVerticalVelocity)));
+		legBckLftInfo.setNewRotateX(legBckLftInfo.getNewRotateX() + PartAnimate.posCosRotateAnimationAdjusted(distanceMoved + legBckLftModifier, newHorizontalVelocity, this.RUN_FREQUENCY, amplitude) * (1F - Math.abs(newVerticalVelocity)));
 
 		float flapAmplitude = 0.4F;
-		
-		this.bodyArmorFlapFntLft.rotateAngleZ = PartAnimate.posCosRotateAnimationAdjusted(distanceMoved, horzVelocity, movementFrequency, flapAmplitude);
-		this.bodyArmorFlapFntRt.rotateAngleZ = PartAnimate.posCosRotateAnimationAdjusted(distanceMoved, horzVelocity, movementFrequency, flapAmplitude);
-		this.bodyArmorFlapBckLft.rotateAngleZ = PartAnimate.negCosRotateAnimationAdjusted(distanceMoved, horzVelocity, movementFrequency, flapAmplitude);
-		this.bodyArmorFlapBckRt.rotateAngleZ = PartAnimate.negCosRotateAnimationAdjusted(distanceMoved, horzVelocity, movementFrequency, flapAmplitude);
+
+		this.bodyArmorFlapFntLft.rotateAngleZ = PartAnimate.posCosRotateAnimationAdjusted(distanceMoved, horzVelocity, RUN_FREQUENCY, flapAmplitude);
+		this.bodyArmorFlapFntRt.rotateAngleZ = PartAnimate.posCosRotateAnimationAdjusted(distanceMoved, horzVelocity, RUN_FREQUENCY, flapAmplitude);
+		this.bodyArmorFlapBckLft.rotateAngleZ = PartAnimate.negCosRotateAnimationAdjusted(distanceMoved, horzVelocity, RUN_FREQUENCY, flapAmplitude);
+		this.bodyArmorFlapBckRt.rotateAngleZ = PartAnimate.negCosRotateAnimationAdjusted(distanceMoved, horzVelocity, RUN_FREQUENCY, flapAmplitude);
 	}
 
-	public void animateTail(EntityClayLuxio entity, float distanceMoved, float horzVelocity, float yawRotationDifference, float yawHeadOffsetDifference, float pitchRotation, float modelSize)
+	public void animateTail(EntityClayLuxio entity, float distanceMoved, float horzVelocity, float yawRotationDifference, float yawHeadOffsetDifference, float pitchRotation, float modelSize, float verticalVelocity, float angularVelocity)
 	{
 		JointAnimation.reverseJointRotatesChange(bodyInfo, tailInfo[0][0]);
+
+		float yawChangeAngle = -(float)Math.toRadians(15);
+		float verticalVelocityChangeAngle = (float)Math.toRadians(-9);
+
+		float bodyJumpAngle = (float)Math.toRadians(-55);
+
+		float newVerticalVelocity = 1.5F * verticalVelocity;
+
+		if(newVerticalVelocity > 1F)
+			newVerticalVelocity = 1F;
+		else if(newVerticalVelocity < -1F)
+			newVerticalVelocity = -1F;
+
+		float absoluteMoveVelocity = horzVelocity + Math.abs(newVerticalVelocity);
+
+		if(absoluteMoveVelocity > 1F)
+			absoluteMoveVelocity = 1F;
+
+		tailInfo[0][1].setNewRotateX(tailInfo[0][1].getNewRotateX() + bodyJumpAngle * newVerticalVelocity);
 
 		for(int i = 0; i < tail.length; i++)
 		{
 			IdleAnimationClock currentIdleAnimationClock = entity.getIdleAnimationClockTail(i);
 
-			float idleAmplitudeX = 0.1F;
-			float idleAmplitudeY = 0.2F;
+			float idleAmplitudeX = 0.18F;
+			float idleAmplitudeY = 0.22F;
 
-			float moveAmplitude = 0.1F;
+			float moveAmplitudeX = (float)Math.toRadians(8);
 
 			// + (float)Math.toRadians(45)
 			float angleChangeX = 0;
 			float angleChangeY = 0;
 
-			angleChangeX += MathHelper.cos(currentIdleAnimationClock.getPhaseDurationCoveredX(0) * PI * 2) * idleAmplitudeX
-					+ PartAnimate.posCosRotateAnimationAdjusted(distanceMoved, horzVelocity, movementFrequency, moveAmplitude);
-			angleChangeY += MathHelper.cos(currentIdleAnimationClock.getPhaseDurationCoveredY(0) * PI * 2) * idleAmplitudeY;
+			// Idle Animations
+			angleChangeX += MathHelper.cos(currentIdleAnimationClock.getPhaseDurationCoveredX(0) * PI * 2) * idleAmplitudeX 
+					* (1F - absoluteMoveVelocity) * (1F - Math.abs(angularVelocity) * 0.5F);
+			angleChangeY += MathHelper.cos(currentIdleAnimationClock.getPhaseDurationCoveredY(0) * PI * 2) * idleAmplitudeY
+					* (1F - absoluteMoveVelocity) * (1F - Math.abs(angularVelocity) * 0.5F);
+
+			// Movement Animations
+			angleChangeX += PartAnimate.negCosRotateAnimationAdjusted(distanceMoved - (2F * PI * ((float)i / (float)(tail.length - 1))), absoluteMoveVelocity, RUN_FREQUENCY, moveAmplitudeX) 
+					+ verticalVelocityChangeAngle * newVerticalVelocity;
+			angleChangeY += angularVelocity * yawChangeAngle;
+
+			// Part Number Dampener
+			angleChangeX *= (1F - (Math.pow(Math.E, -0.95F * (float)(i + 1))));
+			angleChangeY *= (1F - (Math.pow(Math.E, -0.95F * (float)(i + 1))));
 
 			tailInfo[i][1].setNewRotateX(tailInfo[i][1].getNewRotateX() + angleChangeX);
 			tailInfo[i][1].setNewRotateY(tailInfo[i][1].getNewRotateY() + angleChangeY);
 		}
 
 		float moveFrequency = 1F;
-		float moveAmplitude = 0.1F;
+		float moveAmplitude = 0.3F;
 		
 		float moveRotation = PartAnimate.posCosRotateAnimationAdjusted(distanceMoved, horzVelocity, moveFrequency, moveAmplitude);
 		
-		applyTailTipZAnimations(tailInfo[7][1], entity.getIdleAnimationClockTail(tail8.length - 1), -1, moveRotation);
-		applyTailTipZAnimations(tail8Info[0], entity.getIdleAnimationClockTail(tail8.length), 1, -moveRotation);
-		applyTailTipZAnimations(tail8Info[1], entity.getIdleAnimationClockTail(tail8.length + 1), 1, -moveRotation);
-		applyTailTipZAnimations(tail8Info[2], entity.getIdleAnimationClockTail(tail8.length + 2), -1, moveRotation);
+		applyTailTipAnimations(tailInfo[7][1], entity.getIdleAnimationClockTail(tail8.length - 1), -1, moveRotation, absoluteMoveVelocity, newVerticalVelocity, angularVelocity);
+		applyTailTipAnimations(tail8Info[0], entity.getIdleAnimationClockTail(tail8.length), 1, -moveRotation, absoluteMoveVelocity, newVerticalVelocity, angularVelocity);
+		applyTailTipAnimations(tail8Info[1], entity.getIdleAnimationClockTail(tail8.length + 1), 1, -moveRotation, absoluteMoveVelocity, newVerticalVelocity, angularVelocity);
+		applyTailTipAnimations(tail8Info[2], entity.getIdleAnimationClockTail(tail8.length + 2), -1, moveRotation, absoluteMoveVelocity, newVerticalVelocity, angularVelocity);
+	
+		float angleChangeX = (float)Math.toRadians(55);
+		
+		tailInfo[7][1].setNewRotateX(tailInfo[7][1].getNewRotateX() - absoluteMoveVelocity * angleChangeX);
+		tail8Info[0].setNewRotateY(tail8Info[0].getNewRotateY() - absoluteMoveVelocity * angleChangeX);
+		tail8Info[1].setNewRotateX(tail8Info[1].getNewRotateX() + absoluteMoveVelocity * angleChangeX);
+		tail8Info[2].setNewRotateY(tail8Info[2].getNewRotateY() + absoluteMoveVelocity * angleChangeX);
 	}
 
-	public void applyTailTipZAnimations(PartInfo tailTipInfo, IdleAnimationClock currentIdleAnimationClock, int modifier, float moveRotation)
+	public void applyTailTipAnimations(PartInfo tailTipInfo, IdleAnimationClock currentIdleAnimationClock, int modifier, float moveRotation, float absoluteMoveVelocity, float newVerticalVelocity, float angularVelocity)
 	{
 		float idleAmplitudeZ = 0.4F;
 
@@ -627,11 +724,12 @@ public class ModelClayLuxio extends ModelBase
 
 		angleChangeZ += MathHelper.cos(currentIdleAnimationClock.getPhaseDurationCoveredY(0) * PI * 2) * idleAmplitudeZ;
 
-		tailTipInfo.setNewRotateZ(tailTipInfo.getNewRotateZ() + angleChangeZ * modifier + moveRotation);
+		tailTipInfo.setNewRotateZ(tailTipInfo.getNewRotateZ() + angleChangeZ * modifier * (1F - absoluteMoveVelocity) + moveRotation);
 	}
 
 	public void deployAnimations()
 	{
+		this.animationDeployer.move(body, bodyInfo.getNewPnt());
 		this.animationDeployer.rotate(body, bodyInfo.getNewRotates());
 		
 		this.animationDeployer.rotate(neckJoint, neckJointInfo.getNewRotates());
